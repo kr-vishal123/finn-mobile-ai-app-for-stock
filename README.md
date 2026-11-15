@@ -8,6 +8,25 @@ A mobile-first agent for public-markets investors, with three layers:
 - **Pull**: on-demand research on any NSE company, grounded only in primary sources (annual reports, concall transcripts).
 - **Network**: your own contacts as an intelligence layer. Answers "who do I know who can help me understand this?" inside Push and Pull.
 
+**Live:** https://finn-kjk0.onrender.com (free tier, so the first load can take about 50 s)
+
+## Code tour (where to look first)
+
+| Concern | File | What's interesting |
+|---|---|---|
+| Filing classification | [`backend/app/services/announcements.py`](backend/app/services/announcements.py) | Rules place 87% of NSE filings at no cost; the rest are batched to the cheap model |
+| Model routing + cache | [`backend/app/services/llm.py`](backend/app/services/llm.py) | Cheap/strong tiers, prompt-hash cache, cost ledger, validated before caching |
+| Reading filing PDFs | [`backend/app/services/filing_text.py`](backend/app/services/filing_text.py) | Who joined or left, role, verbatim SEBI profile; subject lines |
+| Results card numbers | [`backend/app/services/fundamentals.py`](backend/app/services/fundamentals.py), [`results.py`](backend/app/services/results.py) | Screener tables → QoQ/YoY computed in code |
+| Promised vs delivered | [`backend/app/services/guidance.py`](backend/app/services/guidance.py) | Guidance quotes (with page) from transcripts, checked against actuals |
+| Grounded company Q&A | [`backend/app/services/qa.py`](backend/app/services/qa.py) | BM25 over transcript pages; every quote verified against the cited page |
+| Network engine | [`backend/app/services/network.py`](backend/app/services/network.py) | Who to call, second-degree paths, filing-person links inferred from evidence, keep-warm |
+| Ask router | [`backend/app/services/ask.py`](backend/app/services/ask.py) | Deterministic intent routing; name → ticker for any NSE company |
+| Threshold alerts | [`backend/app/services/rules.py`](backend/app/services/rules.py) | Volume/price checks as pure functions over user-set thresholds |
+| Schema | [`backend/app/models/`](backend/app/models/) | Every network table is scoped by `owner_id` |
+| Mobile UI | [`frontend/src/screens/`](frontend/src/screens/) | Today (company-grouped feed), Company (Pull), Ask, People |
+| Tests | [`backend/tests/`](backend/tests/) | Classifier, thresholds, guidance parsing, person extraction, regressions |
+
 ## Repo layout
 
 ```
@@ -17,7 +36,7 @@ backend/           FastAPI + SQLAlchemy
     db.py          engine, session, Base
     models/        schema (market, filings, fundamentals, network, push, system)
     api/           routes, schemas, auth dependency
-    services/      ingestion, LLM, ranking, network logic
+    services/      ingestion, LLM routing, filings, fundamentals, guidance, Q&A, network, ask
   scripts/         init_db, seeders, ingestion jobs
   tests/
 frontend/          mobile-first web app (Vite + React + Tailwind PWA)
