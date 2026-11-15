@@ -12,6 +12,7 @@ import io
 import json
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
 import httpx
@@ -56,8 +57,9 @@ _METRIC = {
     "ebitda_margin": re.compile(r"\b(ebitda|operating)\s+margin|\bmargins?\b", re.I),
     "capex": re.compile(r"\bcapex\b|capital expenditure", re.I),
 }
-_PCT_RANGE = re.compile(r"(\d{1,2}(?:\.\d)?)\s*(?:%|percent)?\s*(?:-|–|to)\s*(\d{1,2}(?:\.\d)?)\s*(?:%|percent)", re.I)
-_PCT_ONE = re.compile(r"(?:~|about|around|approximately|over|more than|at least|of)?\s*(\d{1,2}(?:\.\d)?)\s*(?:%|percent)", re.I)
+# (?<![\d.]) so "9.37%" is never read as "37%".
+_PCT_RANGE = re.compile(r"(?<![\d.])(\d{1,2}(?:\.\d+)?)\s*(?:%|percent)?\s*(?:-|–|to)\s*(\d{1,2}(?:\.\d+)?)\s*(?:%|percent)", re.I)
+_PCT_ONE = re.compile(r"(?:~|about|around|approximately|over|more than|at least|of)?\s*(?<![\d.])(\d{1,2}(?:\.\d+)?)\s*(?:%|percent)", re.I)
 _WORDS = [
     (r"high[- ]teens", 17, 19), (r"mid[- ]teens", 14, 16), (r"low[- ]teens", 11, 13),
     (r"early[- ]teens", 11, 13), (r"(?:low )?double[- ]digit", 10, 15), (r"high[- ]single[- ]digit", 7, 9),
@@ -123,7 +125,9 @@ def find_promises(pages: list[str], call_fy: int) -> list[dict]:
         for s in _sentences(page):
             if _NOISE.search(s) or not _CUE.search(s):
                 continue
-            if re.search(r"\?$|^(?:Can|Could|Would|What|How|Is|Are|Do|Does)\b", s):
+            if re.search(r"\?$|^(?:Can|Could|Would|What|How|Is|Are|Do|Does)\b|\b(?:my|the|next|first|second|"
+                         r"last|another|follow-?up) question\b|\bjust wanted to (?:check|understand)\b|"
+                         r"^(?:[A-Z][a-z]+ ){1,3}[A-Z][a-z]+:\s*Sir\b|^Sir,", s, re.I):
                 continue  # analyst questions are not promises
             if re.search(r"capacity utili[sz]ation|market share", s, re.I):
                 continue
@@ -208,10 +212,13 @@ def build_guidance(db: Session, company: Company, max_calls: int = 4) -> int:
     quarters = list(db.scalars(select(FinancialPeriod).where(
         FinancialPeriod.company_id == company.id, FinancialPeriod.period_type == PeriodType.quarter)
         .order_by(FinancialPeriod.period_end.desc())))
+    # Download the transcripts in parallel: a first look at an unseen ticker is network-bound.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        texts = dict(zip([d.id for d in docs], pool.map(lambda d: transcript_pages(d.url), docs)))
     db.execute(delete(GuidanceItem).where(GuidanceItem.company_id == company.id))
     n = 0
     for d in docs:
-        pages = transcript_pages(d.url)
+        pages = texts.get(d.id)
         if not pages:
             d.status = "failed"
             continue
