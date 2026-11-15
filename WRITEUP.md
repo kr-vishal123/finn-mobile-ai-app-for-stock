@@ -33,7 +33,12 @@
 4. **Grouping by company, not by filing.** An investor thinks in names, not in disclosure types.
 5. **The network infers links to real people; it never asserts them.** "Likely overlapped" is based on the same employer at the same time, or the same school in years the filing itself states.
 
-**Without a model key the app still works end to end.** It ran entirely on the rule paths while I built it, because no API key was available. With `ANTHROPIC_API_KEY` set, the cheap tier (Claude Haiku 5.5) classifies the remaining filings and writes one-liners, and the strong tier (Claude Opus 5.5) is reserved for interpretation in Pull. Every call is cached and costed in `llm_calls`.
+**What the models actually cost.**
+- Rules classified 594 of 681 filings (87%) for free.
+- The remaining 87 went to the cheap tier, **Gemini 3.5 Flash Lite on Google's free tier**: 5 batched calls, about 14k tokens in total, **$0**. Each call is cached by prompt hash, so a re-run costs nothing.
+- The strong tier is configured but optional: the product works fully without it, because every number is computed in code.
+- Providers are swappable through `.env` (Gemini, or Claude Haiku/Opus through the official SDK), and every call is logged with tokens and cost in `llm_calls`.
+- Only public filing text is ever sent to a model, never network data. That matters on a free tier, where prompts may be used for training.
 
 ## Architecture
 
@@ -66,7 +71,7 @@
 - **Network data here is synthetic and labelled synthetic in the UI.** For real use: the investor's own contact import (CSV or vCard), LinkedIn only through the user's own authorised data export or an approved partner API, and no scraping.
 
 **LLMs and agents**
-- Cheap tier: bulk classification, one-liners and extraction refinement.
+- Cheap tier (Gemini 3.5 Flash Lite, free): classification and one-liners for the filings rules can't place, batched 20 per call, with structured JSON output and retries.
 - Strong tier: Pull interpretation only.
 - No autonomous agents: the "Ask" router is deterministic, so it's instant and free, and a model only parses intent when a key exists. I chose predictable tools over an agent loop because every answer here is a lookup plus arithmetic.
 
@@ -81,7 +86,7 @@
 - Model-written bull and bear prose. Fact lists come first; with a key, the strong model would write the 3–4 lines on top.
 
 ## Where I'd take it next
-1. Turn on the cheap model for the 13% of filings rules can't place, and use it to refine guidance extraction. The rule pass already gives it candidate sentences, so it's cheap.
+1. Use the cheap model to refine guidance extraction and person extraction too. The rule pass already narrows each transcript to a few candidate sentences, so this costs a few hundred tokens per company.
 2. An after-close cron job plus Web Push for threshold alerts.
 3. Track guidance as a time series: did they change the number, and did they say so?
 4. A real contact import plus calendar and email metadata, so "last spoke" maintains itself.

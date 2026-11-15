@@ -93,11 +93,20 @@ def _call_gemini(model: str, system: str, prompt: str, schema: dict | None,
         body["generationConfig"] |= {"responseMimeType": "application/json",
                                      "responseJsonSchema": schema}
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-    try:
-        r = httpx.post(url, json=body, headers={"x-goog-api-key": key}, timeout=120)
-        r.raise_for_status()
-    except httpx.HTTPError as e:
-        raise LLMUnavailable(str(e)) from e
+    for attempt in range(3):  # free tier drops connections / rate-limits now and then
+        try:
+            r = httpx.post(url, json=body, headers={"x-goog-api-key": key}, timeout=120)
+            if r.status_code in (429, 500, 502, 503, 504) and attempt < 2:
+                time.sleep(2 * (attempt + 1) ** 2)
+                continue
+            r.raise_for_status()
+            break
+        except (httpx.TransportError,) as e:
+            if attempt == 2:
+                raise LLMUnavailable(str(e)) from e
+            time.sleep(2 * (attempt + 1) ** 2)
+        except httpx.HTTPError as e:
+            raise LLMUnavailable(str(e)) from e
     data = r.json()
     text = "".join(p.get("text", "") for p in data["candidates"][0]["content"]["parts"])
     usage = data.get("usageMetadata", {})

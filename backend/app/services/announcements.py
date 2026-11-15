@@ -293,7 +293,8 @@ LLM_SYSTEM = """You triage Indian stock-exchange (NSE) corporate announcements f
 For each filing return:
 - category: one of {cats}
 - materiality: 1-5. 5 = likely to move the stock (big M&A, CEO/CFO exit, large order vs company size,
-  rating downgrade, regulatory action). 1 = routine paperwork.
+  rating downgrade, regulatory action). 1 = routine paperwork. Re-appointments, renewals, approvals of
+  something already announced, and vague "disclosure of material information" letters are 2 at most.
 - one_liner: <= 18 words, plain English, what happened and why it might matter. No filler like
   "The company has informed". Use only the text given; do not add outside facts.
 - person_name / person_role / direction: only for management_change (direction: joining|leaving|redesignated),
