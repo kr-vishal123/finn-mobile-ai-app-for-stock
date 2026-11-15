@@ -35,15 +35,43 @@ def ensure_company(db: Session, symbol: str) -> Company | None:
         return company
     import yfinance as yf
 
+    info: dict = {}
     try:
         info = yf.Ticker(f"{symbol}.NS").info or {}
-    except Exception:
-        return None
+    except Exception:  # Yahoo often blocks cloud IPs: fall back to screener below
+        info = {}
     name = info.get("longName") or info.get("shortName")
+    sector, industry = info.get("sector"), info.get("industry")
     if not name:
-        return None
-    company = upsert_company(db, symbol, name, info.get("sector"), info.get("industry"))
+        ident = screener_identity(symbol)
+        if ident is None:
+            return None
+        name, sector, industry = ident
+    company = upsert_company(db, symbol, name, sector, industry)
     if info.get("marketCap"):
         company.market_cap_cr = info["marketCap"] / 1e7
     db.commit()
     return company
+
+
+def screener_identity(symbol: str) -> tuple[str, str | None, str | None] | None:
+    """Name, sector and industry from the company's screener page (fallback resolver)."""
+    import httpx
+    from bs4 import BeautifulSoup
+
+    from app.config import get_settings
+
+    s = get_settings()
+    try:
+        r = httpx.get(f"{s.screener_base_url}/company/{symbol}/", headers={"User-Agent": s.http_user_agent},
+                      timeout=30, follow_redirects=True)
+        if r.status_code != 200:
+            return None
+        soup = BeautifulSoup(r.text, "html.parser")
+    except httpx.HTTPError:
+        return None
+    h1 = soup.find("h1")
+    if h1 is None:
+        return None
+    tags = {a.get("title"): a.get_text(strip=True) for a in soup.select("#peers a[title]")}
+    return h1.get_text(strip=True), tags.get("Broad Sector") or tags.get("Sector"), tags.get("Industry")
