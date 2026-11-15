@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, CATEGORY_LABEL, type Feed, type FeedItem, type Priority, type SignalItem } from "../api";
+import { api, CATEGORY_LABEL, type Pulse, type Feed, type FeedItem, type Priority, type SignalItem } from "../api";
 import { ago, istTime, shortDay } from "../format";
 import AlertSettings from "./AlertSettings";
 import { ResultsTable } from "./ResultsTable";
@@ -145,6 +145,7 @@ export default function Today() {
           <StoryCard key={s.symbol} story={s} />
         ))}
         {feed && feed.routine.length > 0 && <Routine groups={feed.routine} total={feed.counts.routine} />}
+        <AlsoWorthKnowing />
       </main>
 
       {settingsOpen && (
@@ -347,6 +348,93 @@ function Routine({ groups, total }: { groups: Feed["routine"]; total: number }) 
             );
           })}
         </ul>
+      )}
+    </section>
+  );
+}
+
+/** Fills a quiet day with things the investor would still want: moves, broken promises, a call to make. */
+function AlsoWorthKnowing() {
+  const [p, setP] = useState<Pulse | null>(null);
+  useEffect(() => {
+    api.pulse().then(setP).catch(() => setP(null));
+  }, []);
+  if (!p) return null;
+  return (
+    <section className="pt-3">
+      <h2 className="text-[11px] uppercase tracking-[0.14em] text-mute font-semibold">Also worth knowing</h2>
+
+      {p.movers.length > 0 && (
+        <div className="mt-2 rounded-xl border border-line bg-card p-3">
+          <div className="text-[13px] font-medium">
+            Biggest moves <span className="text-mute font-normal">· close {p.as_of ? shortDay(p.as_of) : ""}</span>
+          </div>
+          <table className="w-full mt-1 text-[13px] num">
+            <thead>
+              <tr className="text-[11px] text-mute">
+                <th className="text-left font-normal py-0.5"></th>
+                <th className="text-right font-normal">Close</th>
+                <th className="text-right font-normal">Day</th>
+                <th className="text-right font-normal">5 days</th>
+              </tr>
+            </thead>
+            <tbody>
+              {p.movers.map((m) => (
+                <tr key={m.symbol} className="border-t border-line">
+                  <td className="py-1.5">
+                    <button onClick={() => go({ company: m.symbol })} className="font-medium">
+                      {m.symbol}
+                    </button>
+                  </td>
+                  <td className="text-right">₹{m.close.toLocaleString("en-IN")}</td>
+                  <td className={`text-right ${m.day >= 0 ? "text-up" : "text-down"}`}>
+                    {m.day > 0 ? "+" : ""}
+                    {m.day.toFixed(1)}%
+                  </td>
+                  <td className={`text-right ${m.week == null ? "text-mute" : m.week >= 0 ? "text-up" : "text-down"}`}>
+                    {m.week == null ? "—" : `${m.week > 0 ? "+" : ""}${m.week.toFixed(1)}%`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {p.behind.length > 0 && (
+        <div className="mt-2 rounded-xl border border-down/30 bg-card p-3">
+          <div className="text-[13px] font-medium">Behind their own guidance</div>
+          <ul className="mt-1 space-y-1.5">
+            {p.behind.map((b) => (
+              <li key={b.symbol} className="text-[13px] leading-snug">
+                <button onClick={() => go({ company: b.symbol })} className="font-medium text-down mr-1.5">
+                  {b.symbol}
+                </button>
+                <span className="text-mute">{b.line}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {p.reconnect.length > 0 && (
+        <div className="mt-2 rounded-xl border border-line bg-card p-3">
+          <div className="text-[13px] font-medium">Worth a call this week</div>
+          <ul className="mt-1 divide-y divide-line">
+            {p.reconnect.map((k) => (
+              <li key={k.person_id} className="py-1.5 text-[13px] leading-snug">
+                <button onClick={() => go({ person: k.person_id })} className="font-medium">
+                  {k.name}
+                </button>
+                <span className="text-mute"> · quiet {Math.round(k.last_spoke_days / 30)} mo · </span>
+                <button onClick={() => go({ company: k.symbol })} className="text-accent">
+                  {k.symbol}
+                </button>
+                <span className="text-mute"> {k.hook.split(": ").slice(1).join(": ")}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </section>
   );

@@ -1,16 +1,9 @@
-import { useState } from "react";
-import { net, type AskResult } from "../api";
+import { useEffect, useState } from "react";
+import { api, net, type AskResult } from "../api";
 import { PersonRow, SyntheticNote } from "../components";
 import { go } from "../nav";
 import { KeepWarmList } from "./People";
 
-const EXAMPLES = [
-  "Who should I call about ASTRAL?",
-  "Who can introduce me to Prithvi Vachani?",
-  "Who knows specialty chemicals?",
-  "Research DIXON",
-  "Who should I reconnect with?",
-];
 
 export default function Ask() {
   const [q, setQ] = useState("");
@@ -62,20 +55,84 @@ export default function Ask() {
           {busy ? "…" : "Ask"}
         </button>
       </form>
-      <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1 -mx-4 px-4">
-        {EXAMPLES.map((e) => (
-          <button
-            key={e}
-            onClick={() => run(e)}
-            className="shrink-0 h-8 px-3 rounded-full border border-line text-[13px] text-mute hover:text-ink"
-          >
-            {e}
-          </button>
-        ))}
-      </div>
-
       {err && <div className="mt-4 text-sm text-down">{err}</div>}
-      {res && <Answer r={res} onExample={run} />}
+      {res ? (
+        <>
+          <Answer r={res} onExample={run} />
+          <button onClick={() => setRes(null)} className="mt-6 text-sm text-mute underline">
+            ← More things to ask
+          </button>
+        </>
+      ) : (
+        <StartHere run={run} />
+      )}
+    </div>
+  );
+}
+
+const GROUPS: { title: string; hint: string; items: string[] }[] = [
+  {
+    title: "Research any NSE company",
+    hint: "numbers, promises vs delivery, sources",
+    items: ["Research DIXON", "Adani Power", "Research HAL"],
+  },
+  {
+    title: "Who should I call?",
+    hint: "people who worked there, at a rival, or know the theme",
+    items: ["Who should I call about ASTRAL?", "Who knows specialty chemicals?", "Who knows rural lending?"],
+  },
+  {
+    title: "People in the news",
+    hint: "new appointees from filings, and your paths to them",
+    items: ["Who can introduce me to Prithvi Vachani?", "Who knows V. N. Srivatsan?"],
+  },
+  { title: "Keep the network warm", hint: "", items: ["Who should I reconnect with?"] },
+];
+
+/** Empty state: what FINN can do, as tappable questions, plus one-tap research on holdings. */
+function StartHere({ run }: { run: (q: string) => void }) {
+  const [holdings, setHoldings] = useState<{ symbol: string; kind: string }[]>([]);
+  useEffect(() => {
+    api.watchlist().then((w) => setHoldings(w.map((x) => ({ symbol: x.company.nse_symbol ?? "", kind: x.kind }))));
+  }, []);
+  return (
+    <div className="mt-5 space-y-5">
+      {GROUPS.map((g) => (
+        <section key={g.title}>
+          <div className="text-[13px] font-semibold">{g.title}</div>
+          {g.hint && <div className="text-[11px] text-mute">{g.hint}</div>}
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {g.items.map((q) => (
+              <button
+                key={q}
+                onClick={() => run(q)}
+                className="h-8 px-3 rounded-full border border-line text-[13px] text-mute hover:text-ink hover:border-ink/40"
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+        </section>
+      ))}
+      {holdings.length > 0 && (
+        <section>
+          <div className="text-[13px] font-semibold">Your names</div>
+          <div className="text-[11px] text-mute">tap to open research · outlined = research list</div>
+          <div className="mt-1.5 grid grid-cols-4 gap-1.5">
+            {holdings.map((h) => (
+              <button
+                key={h.symbol}
+                onClick={() => go({ company: h.symbol })}
+                className={`h-9 rounded-lg text-[12px] font-medium truncate px-1 ${
+                  h.kind === "portfolio" ? "bg-card border border-line" : "border border-dashed border-line text-mute"
+                }`}
+              >
+                {h.symbol}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

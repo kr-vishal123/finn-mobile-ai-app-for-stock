@@ -237,6 +237,11 @@ def build_guidance(db: Session, company: Company, max_calls: int = 4) -> int:
                 else:
                     status, assessment = verdict(p["low"], p["high"], got["value"], got["complete"])
                     actual, evidence = got["value"], got
+                    # A margin target 12+ pts away from reported EBITDA margin is almost surely a different
+                    # margin (gross / segment / contribution). Don't call that a miss.
+                    if p["metric"] == "ebitda_margin" and p["low"] is not None and abs(p["low"] - got["value"]) > 12:
+                        status = GuidanceStatus.pending
+                        assessment = "Probably a different margin (gross or segment): not comparable to EBITDA margin"
             db.add(GuidanceItem(
                 company_id=company.id, document_id=d.id, said_in_period=d.period_label or "",
                 metric=p["metric"], guided_value=p["value_text"], guided_low=p["low"], guided_high=p["high"],

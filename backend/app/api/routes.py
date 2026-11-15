@@ -198,3 +198,9 @@ def network_themes(user: User = Depends(current_user), db: Session = Depends(get
 def ask(body: dict, user: User = Depends(current_user), db: Session = Depends(get_db)):
     q = str(body.get("q", ""))[:300]
     return answer(db, user, q)
+
+
+@router.get("/pulse")
+def pulse(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from app.services.pulse import build_pulse
+    return build_pulse(db, user)

@@ -61,6 +61,8 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   feed: (hours: number) => req<Feed>(`/feed?hours=${hours}`),
+  pulse: () => req<Pulse>("/pulse"),
+  watchlist: () => req<{ kind: string; company: { nse_symbol: string | null; name: string } }[]>("/watchlist"),
   rules: () => req<AlertRule[]>("/alert-rules"),
   saveRule: (id: number, params: Record<string, unknown>, enabled = true) =>
     req<AlertRule>(`/alert-rules/${id}`, { method: "PUT", body: JSON.stringify({ params, enabled }) }),
@@ -200,3 +202,10 @@ export const net = {
   expertise: (q: string) => req<Suggestion[]>(`/network/expertise?q=${encodeURIComponent(q)}`),
   person: (id: number) => req<PersonCard>(`/network/people/${id}`),
 };
+
+export interface Pulse {
+  as_of: string | null;
+  movers: { symbol: string; close: number; day: number; week: number | null; date: string }[];
+  behind: { symbol: string; count: number; line: string }[];
+  reconnect: KeepWarm[];
+}
