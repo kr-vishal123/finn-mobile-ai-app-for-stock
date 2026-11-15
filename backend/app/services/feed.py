@@ -10,6 +10,7 @@ from app.api.schemas import Feed, FeedItem, RoutineGroup, SignalItem
 from app.db import utcnow
 from app.models import Alert, Announcement, Company, User, WatchlistItem
 from app.models.enums import Priority, WatchlistKind
+from app.services import network
 
 _PRIO_RANK = {Priority.high: 0, Priority.medium: 1, Priority.low: 2, None: 3}
 
@@ -24,14 +25,39 @@ def _portfolio_ids(db: Session, user: User):
         WatchlistItem.user_id == user.id, WatchlistItem.kind == WatchlistKind.portfolio)
 
 
+_PUBLIC_ENRICHMENT = ("results", "people", "key_sentence")
+_NETWORKED = {"management_change", "m_and_a", "capex", "litigation", "fund_raise"}
+
+
 def _item(a: Announcement) -> FeedItem:
+    enr = {k: v for k, v in (a.enrichment or {}).items() if k in _PUBLIC_ENRICHMENT} or None
     return FeedItem(
         id=a.id, symbol=a.company.nse_symbol, company_name=a.company.name,
         published_at=_aware(a.published_at), category=a.category, priority=a.priority,
         materiality=a.materiality_score, headline=a.headline, one_liner=a.one_liner,
         exchange_category=a.exchange_category, attachment_url=a.attachment_url,
-        enrichment=a.enrichment,
+        enrichment=enr,
     )
+
+
+def attach_network(db: Session, user: User, a: Announcement, item: FeedItem) -> FeedItem:
+    """Who in *this user's* network can help with this filing. Never stored on the shared row."""
+    cat = a.category.value if a.category else ""
+    if cat not in _NETWORKED or a.priority not in (Priority.high, Priority.medium):
+        return item
+    people = (a.enrichment or {}).get("people") or []
+    if cat == "management_change" and people:
+        text = (a.enrichment or {}).get("text_excerpt")
+        out = []
+        for p in people[:3]:
+            conns = network.connections_for_person(db, user, a.company, p, text)
+            if conns:
+                out.append({"for": p["name"], "results": conns[:2]})
+        item.network = out or None
+    else:
+        sug = network.who_to_call(db, user, a.company, limit=2, context=cat.replace("_", " "))
+        item.network = [{"for": None, "results": sug}] if sug else None
+    return item
 
 
 def build_feed(db: Session, user: User, hours: int = 24, now: datetime | None = None) -> Feed:
@@ -89,5 +115,5 @@ def build_feed(db: Session, user: User, hours: int = 24, now: datetime | None = 
         since=since, until=now, requested_hours=hours, note=note,
         counts={"total": len(anns), "material": len(material),
                 "routine": len(anns) - len(material), "signals": len(signals)},
-        signals=signals, material=[_item(a) for a in material], routine=routine,
+        signals=signals, material=[attach_network(db, user, a, _item(a)) for a in material], routine=routine,
     )

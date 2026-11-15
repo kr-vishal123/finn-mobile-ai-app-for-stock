@@ -38,6 +38,7 @@ class FeedItem(BaseModel):
     exchange_category: str | None
     attachment_url: str | None
     enrichment: dict | None = None
+    network: list[dict] | None = None  # per-user, computed at request time
 
 
 class SignalItem(BaseModel):

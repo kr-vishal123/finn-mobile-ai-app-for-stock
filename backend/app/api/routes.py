@@ -1,7 +1,7 @@
 """HTTP API. Thin: request parsing + auth scoping here, logic in app/services."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import current_user
@@ -15,9 +15,17 @@ from app.api.schemas import (
     WatchlistItemOut,
 )
 from app.db import get_db, utcnow
-from app.models import Alert, AlertRule, Company, FinancialPeriod, User, WatchlistItem
+from app.models import (Alert, AlertRule, Company, Expertise, FinancialPeriod, GuidanceItem, Person,
+                        User, WatchlistItem)
 from app.models.enums import AlertRuleType, PeriodType
+from app.services import network
+from app.services.ask import answer
+from app.services.companies import ensure_company
 from app.services.feed import build_feed
+from app.services.fundamentals import ensure_fundamentals
+from app.services.guidance import build_guidance
+from app.services.research import build_research
+from app.services.results import enrich_results
 from app.services.rules import run_announcement_alerts, run_price_alerts
 
 router = APIRouter()
@@ -130,3 +138,63 @@ def quarters(symbol: str, n: int = Query(8, ge=1, le=40), db: Session = Depends(
         .limit(n)
     )
     return db.scalars(stmt).all()
+
+
+@router.get("/research/{symbol}")
+def research(symbol: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Any NSE symbol. First request for an unseen ticker fetches fundamentals + transcripts
+    (slow, once); later requests are served from the DB."""
+    company = ensure_company(db, symbol)
+    if company is None:
+        raise HTTPException(404, f"{symbol.upper()} isn't a listed NSE symbol we can resolve")
+    how = ensure_fundamentals(db, company)
+    if how == "unavailable":
+        raise HTTPException(503, f"No fundamentals available for {company.nse_symbol} right now")
+    if how == "live" or not db.scalar(select(GuidanceItem.id).where(GuidanceItem.company_id == company.id).limit(1)):
+        build_guidance(db, company)
+        enrich_results(db, company.id)
+    return build_research(db, user, company)
+
+
+# ---------- Network (always scoped to the current user) ----------
+
+
+@router.get("/network/who/{symbol}")
+def network_who(symbol: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    company = get_company(symbol, db)
+    return network.who_to_call(db, user, company, limit=5)
+
+
+@router.get("/network/expertise")
+def network_expertise(q: str = Query(..., min_length=2), user: User = Depends(current_user),
+                      db: Session = Depends(get_db)):
+    return network.expertise(db, user, q)
+
+
+@router.get("/network/keep-warm")
+def network_keep_warm(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    return network.keep_warm(db, user)
+
+
+@router.get("/network/people/{person_id}")
+def network_person(person_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    card = network.person_card(db, user, person_id)
+    if card is None:
+        raise HTTPException(404)
+    return card
+
+
+@router.get("/network/themes")
+def network_themes(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Expertise map: themes across the network, with how many people cover each."""
+    rows = db.execute(
+        select(Expertise.theme, func.count(Expertise.id)).join(Person, Person.id == Expertise.person_id)
+        .where(Person.owner_id == user.id).group_by(Expertise.theme).order_by(func.count(Expertise.id).desc())
+    ).all()
+    return [{"theme": t, "people": n} for t, n in rows]
+
+
+@router.post("/ask")
+def ask(body: dict, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    q = str(body.get("q", ""))[:300]
+    return answer(db, user, q)

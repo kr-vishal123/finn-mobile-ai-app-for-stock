@@ -12,7 +12,8 @@ export interface FeedItem {
   one_liner: string | null;
   exchange_category: string | null;
   attachment_url: string | null;
-  enrichment: Record<string, unknown> | null;
+  enrichment: Record<string, any> | null;
+  network: { for: string | null; results: Suggestion[] }[] | null;
 }
 
 export interface SignalItem {
@@ -83,4 +84,119 @@ export const CATEGORY_LABEL: Record<string, string> = {
   agm_egm: "AGM / EGM",
   pledging: "Pledging",
   unclassified: "Routine paperwork",
+};
+
+// ---------- Network ----------
+export interface Suggestion {
+  person_id: number;
+  name: string;
+  headline: string | null;
+  relationship: string | null;
+  strength: number | null;
+  last_spoke_days: number | null;
+  score: number;
+  reasons: string[];
+  caution: string | null;
+  via: { person_id: number; name: string; relationship: string; link_strength: number; evidence: string }[] | null;
+}
+
+export interface KeepWarm {
+  person_id: number;
+  name: string;
+  headline: string | null;
+  relationship: string;
+  strength: number;
+  last_spoke_days: number;
+  hook: string;
+  symbol: string;
+  category: string | null;
+}
+
+export interface PersonCard {
+  id: number;
+  name: string;
+  headline: string | null;
+  location: string | null;
+  source: string;
+  relationship: string | null;
+  strength: number | null;
+  last_spoke_days: number | null;
+  how_met: string | null;
+  experiences: { org: string; title: string; years: string; symbol: string | null }[];
+  educations: { institution: string; degree: string; years: string }[];
+  expertise: string[];
+  path: Suggestion["via"];
+}
+
+// ---------- Pull ----------
+export interface ResultsCompare {
+  label: string;
+  prev_label: string | null;
+  yago_label: string | null;
+  rows: { metric: string; value: number | null; qoq: number | null; yoy: number | null }[];
+  ebitda_margin: number | null;
+  ebitda_margin_prev: number | null;
+  ebitda_margin_yago: number | null;
+  checks: string[];
+  consolidated: boolean;
+  source: string;
+}
+
+export interface Promise_ {
+  said_in: string;
+  metric: string;
+  guided: string;
+  target: string;
+  quote: string;
+  page: number | null;
+  actual: number | null;
+  status: "met" | "partial" | "missed" | "pending" | "withdrawn";
+  assessment: string;
+  detail: string | null;
+  span: string | null;
+  source_url: string | null;
+}
+
+export interface Research {
+  symbol: string;
+  name: string;
+  sector: string | null;
+  industry: string | null;
+  market_cap_cr: number | null;
+  description: string | null;
+  is_lender: boolean;
+  ratios: Record<string, number | null>;
+  latest: ResultsCompare | null;
+  ttm: { revenue: number; pat: number; revenue_growth: number | null; pat_growth: number | null; ebitda_margin: number | null } | null;
+  trajectory: {
+    years: { label: string; revenue: number | null; ebitda_margin: number | null; pat: number | null; cfo: number | null; roce: number | null }[];
+    revenue_cagr_3y?: number | null;
+    pat_cagr_3y?: number | null;
+    margin_change_3y_pts?: number | null;
+  };
+  balance: { borrowings: number | null; equity: number | null; debt_to_equity: number | null; ccc_days: number | null; ccc_days_3y_ago: number | null; label: string } | null;
+  cash: { cfo_5y: number; pat_5y: number; fcf_5y: number; cfo_to_pat: number | null; cfo_to_ebitda: number | null; years: number } | null;
+  narrative: Promise_[];
+  signals: { bull: string[]; bear: string[] };
+  who_to_call: Suggestion[];
+  sources: { type: string; title: string; period: string | null; url: string; date: string | null; used: boolean }[];
+  grounding: string;
+}
+
+export type AskResult =
+  | { type: "who_to_call"; title: string; symbol: string; results: Suggestion[] }
+  | { type: "expertise"; title: string; results: Suggestion[] }
+  | { type: "keep_warm"; title: string; results: KeepWarm[] }
+  | { type: "person_reach"; title: string; person: any; results: Suggestion[] }
+  | { type: "person"; title: string; person: PersonCard }
+  | { type: "company"; title: string; symbol: string }
+  | { type: "help"; title: string; examples: string[] };
+
+export const net = {
+  research: (s: string) => req<Research>(`/research/${encodeURIComponent(s)}`),
+  ask: (q: string) => req<AskResult>("/ask", { method: "POST", body: JSON.stringify({ q }) }),
+  keepWarm: () => req<KeepWarm[]>("/network/keep-warm"),
+  themes: () => req<{ theme: string; people: number }[]>("/network/themes"),
+  expertise: (q: string) => req<Suggestion[]>(`/network/expertise?q=${encodeURIComponent(q)}`),
+  person: (id: number) => req<PersonCard>(`/network/people/${id}`),
 };

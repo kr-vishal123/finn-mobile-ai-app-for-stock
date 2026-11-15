@@ -1,5 +1,7 @@
 # FINN — Financial Investment Agent
 
+> Covering note, architecture, decisions and what's next: **[WRITEUP.md](WRITEUP.md)**.
+
 A mobile-first agent for public-markets investors, with three layers:
 
 - **Push**: tells you what changed across your portfolio and why it matters (windowed digest + threshold alerts).
@@ -29,7 +31,8 @@ cd backend
 python -m venv .venv && .venv/Scripts/activate      # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env                                # optional: add ANTHROPIC_API_KEY
-python -m scripts.seed                              # universe, 1y prices, 90d NSE filings, alerts
+python -m scripts.seed                              # universe, prices, NSE filings + PDFs, fundamentals,
+                                                    # transcripts -> guidance, synthetic network, alerts
 uvicorn app.main:app --reload                       # http://localhost:8000  (API docs: /docs)
 
 # frontend (dev, hot reload; proxies /api to :8000)

@@ -46,7 +46,7 @@ DAY 1 (Fri 13): data spine + first slice live
 ----------------------------------------------------------------
 DAY 2 (Sat 14): Push depth + Network + Pull
 ----------------------------------------------------------------
-5. Mock network (1h)
+5. [DONE] Mock network (1h)
    - 25-30 SYNTHETIC people (labelled source=synthetic in the data and the UI). Their employers and schools
      should overlap the portfolio and research names.
    - Plant the stories the demo needs:
@@ -57,7 +57,7 @@ DAY 2 (Sat 14): Push depth + Network + Pull
    - Entity resolution: normalised name + employer context, which gives a confidence score.
      Below the threshold, show "possible match" instead of asserting it.
 
-6. Network engine (1.5h)
+6. [DONE] Network engine (1.5h)
    - who_to_call(company or event): score = relationship strength x relevance (same company > competitor/
      supplier > same sector) x tenure overlap x recency. Return the top 3 with a one-line "why" (template first,
      LLM polish optional).
@@ -65,7 +65,7 @@ DAY 2 (Sat 14): Push depth + Network + Pull
      (same org with overlapping dates, same school with overlapping years). Return the path and the weakest link.
    - expertise(theme): rank people by expertise tags and by sector of past employers.
 
-7. Rich Push cards (2.5h)
+7. [DONE] Rich Push cards (2.5h): results numbers from screener, people + profile from filing PDFs
    - Results: the cheap LLM extracts Rev/EBITDA/PBT/PAT for current, prior and year-ago quarters from the
      results PDF into JSON. Code validates it (PBT >= PAT, EBITDA >= PBT in most cases, and a cross-check
      against screener's quarterly table) and computes QoQ/YoY. Show a "verified vs screener" tick.
@@ -74,7 +74,7 @@ DAY 2 (Sat 14): Push depth + Network + Pull
    - Keep-warm card (very little extra work, strong demo).
    - Alert settings sheet: thresholds and categories, saved to alert_rules.
 
-8. Pull: generalised, lazy, cached (3h)
+8. [DONE, rules-only until a key is set] Pull: generalised, lazy, cached (3h)
    - On first request for ANY ticker: fetch the screener page, then the standardised financials table
      (quarters and years) plus the links to the last 4 transcripts and the latest annual report. Download,
      extract text with page numbers and cache. Stream progress to the UI so a cold ticker feels alive.
@@ -93,7 +93,7 @@ DAY 2 (Sat 14): Push depth + Network + Pull
 ----------------------------------------------------------------
 DAY 3 (Sun 15): interaction model, polish, writeup, submit
 ----------------------------------------------------------------
-9. Interaction model (2h)
+9. [DONE] Interaction model (2h)
    - 3 tabs: Today (feed) / Ask / People. Network is ALSO embedded in every card and company page,
      so it is not bolted on.
    - Ask: a single input routed to tools (company research, who_to_call, expertise, second_degree)

@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { api, CATEGORY_LABEL, type Feed, type FeedItem, type Priority, type SignalItem } from "../api";
 import { ago, istTime, shortDay } from "../format";
 import AlertSettings from "./AlertSettings";
+import { ResultsTable } from "./ResultsTable";
+import { PersonRow } from "../components";
+import { go } from "../nav";
 
 const WINDOWS = [
   { h: 24, label: "24h" },
@@ -74,7 +77,7 @@ export default function Today() {
   });
   const setHours = (h: number) => {
     setHoursState(h);
-    history.replaceState(null, "", h === 24 ? location.pathname : `?h=${h}`);
+    history.replaceState(null, "", (h === 24 ? location.pathname : `?h=${h}`) + location.hash);
   };
   const [feed, setFeed] = useState<Feed | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -168,13 +171,16 @@ function Headline({ feed, stories }: { feed: Feed; stories: number }) {
 
 function StoryCard({ story }: { story: CompanyStory }) {
   const high = story.top === "high";
+  // One "who to call" per company, from its most material non-people filing (people get their own).
+  const callList =
+    story.filings.find((f) => f.category !== "management_change" && f.network?.length)?.network?.[0]?.results.slice(0, 2) ?? [];
   return (
     <article className={`rounded-xl bg-card border ${high ? "border-accent/50" : "border-line"} overflow-hidden`}>
       <div className="px-3.5 pt-3 flex items-baseline justify-between gap-2">
-        <div className="min-w-0">
+        <button onClick={() => go({ company: story.symbol })} className="min-w-0 text-left">
           <span className="font-semibold tracking-tight">{story.symbol}</span>
-          <span className="text-mute text-xs ml-2 truncate">{story.name.replace(/ (Ltd|Limited)\.?$/, "")}</span>
-        </div>
+          <span className="text-mute text-xs ml-2 truncate">{story.name.replace(/ (Ltd|Limited)\.?$/, "")} ›</span>
+        </button>
         {high && <span className="text-[10px] uppercase tracking-wider text-accent font-semibold">Material</span>}
       </div>
 
@@ -191,6 +197,14 @@ function StoryCard({ story }: { story: CompanyStory }) {
           <FilingRow key={f.id} f={f} />
         ))}
       </ul>
+      {callList.length > 0 && (
+        <div className="mx-3.5 mb-3 rounded-lg bg-bg/60 border border-line px-2.5 py-1">
+          <div className="text-[10px] uppercase tracking-wider text-accent font-semibold pt-1">Who to call about this</div>
+          {callList.map((s) => (
+            <PersonRow key={s.person_id} s={s} compact />
+          ))}
+        </div>
+      )}
       {story.filings.length === 0 && <div className="h-3" />}
     </article>
   );
@@ -218,6 +232,8 @@ function SignalChip({ s }: { s: SignalItem }) {
 
 function FilingRow({ f }: { f: FeedItem }) {
   const text = f.one_liner || f.headline;
+  const enr = f.enrichment ?? {};
+  const people: any[] = enr.people ?? [];
   return (
     <li className="px-3.5 py-2.5">
       <div className="flex items-center gap-2 text-[11px] text-mute">
@@ -228,8 +244,54 @@ function FilingRow({ f }: { f: FeedItem }) {
         <time title={istTime(f.published_at)}>{ago(f.published_at)}</time>
       </div>
       <p className="text-[15px] leading-snug mt-0.5">{text}</p>
+
+      {enr.results && (
+        <div className="mt-2">
+          <ResultsTable c={enr.results} lender={enr.results.rows?.[1]?.value == null} />
+        </div>
+      )}
+
+      {people.length > 0 && (
+        <ul className="mt-2 space-y-2">
+          {people.slice(0, 3).map((p) => (
+            <li key={p.name} className="text-[13px]">
+              <div>
+                <span className={p.direction === "joining" ? "text-up" : "text-down"}>{p.direction === "joining" ? "In" : "Out"}</span>{" "}
+                <span className="font-medium">{p.name}</span>
+                {p.role && <span className="text-mute"> · {p.role}</span>}
+              </div>
+              {p.profile ? (
+                <p className="text-mute leading-snug mt-0.5">{p.profile.length > 240 ? p.profile.slice(0, 237) + "…" : p.profile}</p>
+              ) : (
+                p.direction === "joining" && <p className="text-mute text-[12px]">No profile in the filing.</p>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {enr.key_sentence && !people.length && (
+        <p className="mt-1.5 text-[13px] text-mute leading-snug border-l-2 border-line pl-2.5">“{enr.key_sentence}”</p>
+      )}
+
+      {f.category === "management_change" && f.network && f.network.length > 0 && (
+        <div className="mt-2 rounded-lg bg-bg/60 border border-line px-2.5 py-1">
+          <div className="text-[10px] uppercase tracking-wider text-accent font-semibold pt-1">
+            {f.category === "management_change" ? "Your network" : "Who to call"}
+          </div>
+          {f.network.slice(0, 2).map((g, i) => (
+            <div key={i}>
+              {g.for && f.network!.length > 1 && <div className="text-[11px] text-mute pt-1">re {g.for}</div>}
+              {g.results.slice(0, 2).map((s) => (
+                <PersonRow key={s.person_id} s={s} compact />
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+
       {f.attachment_url && (
-        <a href={f.attachment_url} target="_blank" rel="noreferrer" className="text-xs text-mute underline underline-offset-2 mt-1 inline-block">
+        <a href={f.attachment_url} target="_blank" rel="noreferrer" className="text-xs text-mute underline underline-offset-2 mt-1.5 inline-block">
           Filing PDF ↗
         </a>
       )}
