@@ -1,0 +1,120 @@
+FINN — build plan (deadline: Sun 15 Nov 2026)
+================================================
+
+Guiding rules
+- Build vertical slices, not layers. Each slice runs end to end: data -> API -> screen -> deployed.
+  If time runs out, everything that exists still works. ("A demo that doesn't run is the worst outcome.")
+- Deploy early (end of Day 1) and redeploy after every slice. Never leave deployment to the last night.
+- Demo-proof data: pre-ingest everything for the demo set into the DB and ship that DB.
+  Live fetching is only for unseen tickers, and it falls back to cached snapshots when NSE/BSE/screener fail.
+- Numbers come from code; words come from LLMs. The LLM extracts and explains, while Python computes
+  QoQ/YoY, guidance hit-or-miss and network scores. This is cheaper and checkable, and it makes good writeup material.
+- Log every AI session from now on (the build history is a deliverable).
+
+[DONE] 0. Setup: repo, FastAPI skeleton, DB schema (20 tables), .env, smoke tests.
+
+----------------------------------------------------------------
+DAY 1 (Fri 13): data spine + first slice live
+----------------------------------------------------------------
+1. [DONE] Portfolio + seed (45m)
+   - 15-18 portfolio names across sectors and sizes, plus 3-5 research names. Include mid-caps that have
+     real concall transcripts on screener, and names likely to have recent results, management changes or M&A filings.
+   - Seed script: companies (symbol, name, sector, screener slug) and watchlist items.
+
+2. [DONE] Prices + rule engine (1h)
+   - yfinance batch download of about 1 year of EOD data for all tickers in a single call; upsert price_bars.
+   - Rule engine in pure Python: volume > N x 20-day average and |move| > X%, with thresholds read from alert_rules.
+     Unit-test it on a synthetic series.
+
+3. [DONE] Announcements (2h): NSE primary (BSE blocks automated access); rules place 87%
+   - Use BSE as the primary source (the JSON API is more stable than NSE, which needs cookies and blocks bots)
+     and NSE as a secondary source. Write a raw JSON snapshot per ticker to data/snapshots/ and fall back to it on failure.
+   - Classify in two steps for cost:
+       a) Map rules first: exchange category/subject keywords -> category. This should handle around 60% for free.
+       b) Batch the remaining items, about 20 headlines per call, through the cheap LLM. It returns category,
+          materiality 1-5 and a one-liner as JSON, cached in llm_calls by hash.
+   - Priority = f(category base weight, materiality, user's "care about" categories).
+
+4. [BUILT, NOT YET DEPLOYED] FIRST SLICE: digest screen, deployed (2h)
+   - Frontend: Vite + React + Tailwind as an installable PWA. FastAPI serves the built files, so there is
+     ONE deployment and ONE URL that opens on a phone.
+   - Feed screen: window picker (24h / 3d / 7d / custom), with material items first and routine items collapsed.
+     Empty-window guard: the reviewer may open it on a weekend, so if the last 24h is empty, say so and show
+     the latest trading day instead of a blank screen.
+   - Deploy to Render or Fly (free tier) with the pre-built SQLite DB inside the image. Add a keep-warm ping.
+
+----------------------------------------------------------------
+DAY 2 (Sat 14): Push depth + Network + Pull
+----------------------------------------------------------------
+5. Mock network (1h)
+   - 25-30 SYNTHETIC people (labelled source=synthetic in the data and the UI). Their employers and schools
+     should overlap the portfolio and research names.
+   - Plant the stories the demo needs:
+       * the incoming CFO or MD in a real management-change filing, plus a contact who worked with them
+         (overlapping tenure) and one who is 2 hops away;
+       * a contact at a competitor or supplier of a company with an M&A, capex or litigation filing;
+       * a contact you haven't spoken to in 8 months whose ex-employer just reported results (keep-warm).
+   - Entity resolution: normalised name + employer context, which gives a confidence score.
+     Below the threshold, show "possible match" instead of asserting it.
+
+6. Network engine (1.5h)
+   - who_to_call(company or event): score = relationship strength x relevance (same company > competitor/
+     supplier > same sector) x tenure overlap x recency. Return the top 3 with a one-line "why" (template first,
+     LLM polish optional).
+   - second_degree(person): BFS up to 2 hops over contacts, person_links and computed overlaps
+     (same org with overlapping dates, same school with overlapping years). Return the path and the weakest link.
+   - expertise(theme): rank people by expertise tags and by sector of past employers.
+
+7. Rich Push cards (2.5h)
+   - Results: the cheap LLM extracts Rev/EBITDA/PBT/PAT for current, prior and year-ago quarters from the
+     results PDF into JSON. Code validates it (PBT >= PAT, EBITDA >= PBT in most cases, and a cross-check
+     against screener's quarterly table) and computes QoQ/YoY. Show a "verified vs screener" tick.
+   - Management change: incoming person's bio plus network overlap (step 6).
+   - Material event: best person to call and why (step 6).
+   - Keep-warm card (very little extra work, strong demo).
+   - Alert settings sheet: thresholds and categories, saved to alert_rules.
+
+8. Pull: generalised, lazy, cached (3h)
+   - On first request for ANY ticker: fetch the screener page, then the standardised financials table
+     (quarters and years) plus the links to the last 4 transcripts and the latest annual report. Download,
+     extract text with page numbers and cache. Stream progress to the UI so a cold ticker feels alive.
+   - Map step (cheap model, long context, once per document, cached): each transcript becomes JSON with
+     guidance items (metric, value, target period, verbatim quote, page), segments and key themes.
+     This replaces generic chunk-RAG for the main outputs; FTS5 keyword search over chunks covers follow-up questions.
+   - Reduce step (strong model, called only here):
+       * Business snapshot (from AR plus the transcript map output)
+       * Financial snapshot (pure code from screener tables: no LLM, so no hallucination)
+       * Narrative vs numbers: code joins guidance_items with actual financial_periods to get met/missed/partial;
+         the strong model writes 3-4 lines of interpretation from that table only.
+   - Every claim carries a citation (doc, page, quote). The prompt guardrail says "only the provided context,
+     else say not disclosed".
+   - "Who to call" strip on every company page (step 6).
+
+----------------------------------------------------------------
+DAY 3 (Sun 15): interaction model, polish, writeup, submit
+----------------------------------------------------------------
+9. Interaction model (2h)
+   - 3 tabs: Today (feed) / Ask / People. Network is ALSO embedded in every card and company page,
+     so it is not bolted on.
+   - Ask: a single input routed to tools (company research, who_to_call, expertise, second_degree)
+     with a cheap model as the router. Suggested prompts as chips.
+   - People: expertise search, a small 2-hop path view (SVG, no heavy graph library) and the keep-warm list.
+   - Design: dense, monochrome with one accent colour, numbers in tabular figures, no gradients.
+
+10. Cost and trust surfacing (30m)
+   - Footer in the app showing "this session: N model calls, X cached, $0.00x" from llm_calls.
+     This directly earns the efficiency bonus points.
+
+11. Ship (2h)
+   - Freeze the demo DB, redeploy, and test on a real phone (Android Chrome + iOS Safari).
+   - Test 2 tickers outside the demo set end to end, since they said they may do this.
+   - README: architecture diagram (pipelines, privacy, LLM routing, cloud), run steps, synthetic-data note.
+   - Writeup email: what was built, decisions and tradeoffs, what was left out, what comes next.
+     Covers data pipelines / security and privacy / LLMs and agents / cloud.
+   - Export the AI build history (Claude Code sessions).
+   - Email assessment@enam.com, subject: "IIT Delhi – Founding AI Engineer - 2027"
+
+Cut list (drop in this order if behind)
+   1. Keep-warm card  2. 2-hop graph view (use a text path)  3. Ask router (use fixed buttons)
+   4. Expertise map  5. BSE secondary source
+   Never cut: the deployed link, results card, mgmt-change card with network, narrative vs numbers, writeup.

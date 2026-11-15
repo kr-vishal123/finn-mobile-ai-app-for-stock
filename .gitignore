@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Secrets — never commit real keys
+.env
+.env.*
+!.env.example
+
+# Local data (SQLite DB, downloaded PDFs, caches)
+backend/data/*
+!backend/data/.gitkeep
+*.db
+*.sqlite3
+!backend/snapshots/demo.db
+
+# Node / frontend
+node_modules/
+.next/
+dist/
+build/
+.expo/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.tsbuildinfo

@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: finn
+    runtime: docker
+    plan: free
+    region: singapore        # closest Render region to Indian users
+    healthCheckPath: /api/health
+    envVars:
+      - key: APP_ENV
+        value: prod
+      - key: ANTHROPIC_API_KEY
+        sync: false          # set in the Render dashboard, never committed
