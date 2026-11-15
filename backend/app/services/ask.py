@@ -26,17 +26,63 @@ EXAMPLES = [
 ]
 
 
+_GENERIC = {"india", "ltd", "limited", "company", "the", "and", "of", "co"}
+_INTENT = {"who", "whom", "should", "i", "we", "call", "about", "research", "can", "could", "ask", "talk", "to",
+           "speak", "with", "the", "me", "tell", "on", "for", "is", "open", "show", "analyse", "analyze",
+           "company", "stock", "shares", "share", "what", "how", "regarding", "know", "knows", "expert",
+           "please", "a", "an", "in", "at", "look", "deep", "dive", "into", "of", "do"}
+
+
 def _find_company(db: Session, text: str) -> Company | None:
+    """A company already in FINN's DB: exact ticker, or *every* distinctive word of its name.
+    ("Adani" alone must not match Adani Green when the user means Adani Power.)"""
     t = text.upper()
     companies = list(db.scalars(select(Company)))
     for c in companies:  # exact ticker
         if c.nse_symbol and re.search(rf"(?<![A-Z]){re.escape(c.nse_symbol)}(?![A-Z])", t):
             return c
-    n = normalize_org_name(text)
-    for c in sorted(companies, key=lambda c: -len(c.name_normalized)):
-        first = c.name_normalized.split()[0]
-        if c.name_normalized in n or (len(first) > 4 and re.search(rf"\b{re.escape(first)}\b", n)):
-            return c
+    q = set(normalize_org_name(text).split())
+    best, best_n = None, 0
+    for c in companies:
+        sig = [w for w in c.name_normalized.split() if w not in _GENERIC]
+        if sig and all(w in q for w in sig) and len(sig) > best_n:
+            best, best_n = c, len(sig)
+    return best
+
+
+# Market shorthand that a name search gets wrong ("L&T" would otherwise resolve to L&T Finance).
+_ALIASES = {
+    "l&t": ("LT", "Larsen & Toubro Ltd"), "lnt": ("LT", "Larsen & Toubro Ltd"), "larsen": ("LT", "Larsen & Toubro Ltd"),
+    "m&m": ("M&M", "Mahindra & Mahindra Ltd"), "hul": ("HINDUNILVR", "Hindustan Unilever Ltd"),
+    "sbi": ("SBIN", "State Bank of India"), "ril": ("RELIANCE", "Reliance Industries Ltd"),
+    "reliance": ("RELIANCE", "Reliance Industries Ltd"), "itc": ("ITC", "ITC Ltd"),
+}
+
+
+def _search_symbol(text: str) -> tuple[str, str] | None:
+    """Resolve a company *name* to an NSE ticker via screener's search (any listed company)."""
+    import httpx
+
+    from app.config import get_settings
+
+    words = [w for w in re.findall(r"[A-Za-z0-9&.\-]+", text) if w.lower() not in _INTENT]
+    if not words:
+        return None
+    alias = _ALIASES.get(" ".join(words).lower())
+    if alias:
+        return alias
+    s = get_settings()
+    try:
+        r = httpx.get(f"{s.screener_base_url}/api/company/search/", params={"q": " ".join(words)},
+                      headers={"User-Agent": s.http_user_agent}, timeout=15)
+        r.raise_for_status()
+        hits = r.json()
+    except (httpx.HTTPError, ValueError):
+        return None
+    for h in hits:
+        m = re.match(r"/company/([A-Z0-9&\-]*[A-Z][A-Z0-9&\-]*)/", h.get("url", ""))  # NSE tickers have letters
+        if m:
+            return m.group(1), h.get("name") or m.group(1)
     return None
 
 
@@ -90,16 +136,29 @@ def answer(db: Session, user: User, q: str) -> dict:
     m = re.search(r"(?:who (?:knows|understands|can explain|is good on|covers)|expert(?:s|ise)? (?:on|in)|"
                   r"go-?to (?:people|person) for|ask about)\s+(.+?)[?.]*$", low)
     theme = m.group(1) if m else None
-    if not theme:  # a bare theme that matches someone's expertise
+    if not theme:  # a bare theme: only when the whole query *is* the theme ("power" ≠ "adani power")
         tags = {t.lower() for t in db.scalars(select(Expertise.theme))}
-        theme = next((t for t in tags if t in low), None)
+        bare = " ".join(w for w in re.findall(r"[a-z&\-]+", low) if w not in _INTENT)
+        theme = bare if bare in tags else None
     if theme:
         theme = re.sub(r"^(the|about)\s+", "", theme.strip())
         return {"type": "expertise", "title": f"Your go-to people for {theme}",
                 "results": network.expertise(db, user, theme)}
 
-    sym = re.fullmatch(r"(?:research\s+)?([A-Za-z&]{2,15})", text)
-    if sym:  # possibly an NSE ticker we haven't seen yet: the research view resolves it lazily
+    # Not in FINN yet: resolve the name to a ticker (any NSE company), then answer the same way.
+    found = _search_symbol(text)
+    if found:
+        symbol, name = found
+        if re.search(r"who|call|ask|talk|speak|expert|know", low):
+            from app.services.companies import ensure_company
+            c = ensure_company(db, symbol)
+            if c is not None:
+                return {"type": "who_to_call", "title": f"Who to call about {name.split(' Ltd')[0]}",
+                        "symbol": symbol, "results": network.who_to_call(db, user, c, limit=5)}
+        return {"type": "company", "title": name, "symbol": symbol}
+
+    sym = re.fullmatch(r"(?:research\s+)?([A-Za-z&]{2,15})", text.strip())
+    if sym:  # looks like a ticker: the research view resolves it lazily
         return {"type": "company", "title": sym.group(1).upper(), "symbol": sym.group(1).upper()}
 
     return {"type": "help", "title": "Try one of these", "examples": EXAMPLES}

@@ -67,3 +67,15 @@ def test_alert_rule_bounds():
 def test_normalize():
     assert normalize_person_name("Mr. Rajesh  K. Gopinathan") == "rajesh k gopinathan"
     assert normalize_org_name("Larsen & Toubro Limited") == "larsen and toubro"
+
+
+def test_name_match_needs_every_distinctive_word():
+    """Regression: 'adani power' used to resolve to Adani Green via the first word alone."""
+    from app.services.ask import _find_company
+    with SessionLocal() as db:
+        db.add(Company(nse_symbol="ADANIGREEN", name="Adani Green Energy Ltd",
+                       name_normalized=normalize_org_name("Adani Green Energy Ltd")))
+        db.commit()
+        assert _find_company(db, "adani power") is None
+        assert _find_company(db, "who to call about adani green energy").nse_symbol == "ADANIGREEN"
+        assert _find_company(db, "ADANIGREEN").nse_symbol == "ADANIGREEN"
