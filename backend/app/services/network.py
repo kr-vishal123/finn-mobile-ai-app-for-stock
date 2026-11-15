@@ -95,6 +95,7 @@ def who_to_call(db: Session, owner: User, company: Company, limit: int = 3,
     out: list[Suggestion] = []
     for p in people:
         best, reasons, caution = 0.0, [], None
+        scored: list[tuple[float, str]] = []
         for e in p.experiences:
             co = e.company
             current = e.end_date is None
@@ -115,12 +116,15 @@ def who_to_call(db: Session, owner: User, company: Company, limit: int = 3,
             else:
                 continue
             best = max(best, sc)
-        tags = [x.theme for x in p.expertise if _theme_words(x.theme) & themes]
+            scored.append((sc, reasons[-1]))
+        # Every word of the tag must appear ("building materials" must not match "Ship Building").
+        tags = [x.theme for x in p.expertise if _theme_words(x.theme) and _theme_words(x.theme) <= themes]
         if tags:
             best = max(best, 2.4) + (0.3 if best >= 2.4 else 0)
-            reasons.append("Knows " + ", ".join(tags[:3]))
+            scored.append((2.4, "Knows " + ", ".join(tags[:3])))
         if best == 0:
             continue
+        reasons = [r for _, r in sorted(scored, key=lambda x: -x[0])]  # strongest evidence first
         rel, strength, days = _contact_meta(p)
         sug = Suggestion(p.id, p.full_name, p.headline, rel, strength, days, 0.0, reasons[:3], caution)
         if rel is not None:
