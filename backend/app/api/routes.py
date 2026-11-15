@@ -204,3 +204,14 @@ def ask(body: dict, user: User = Depends(current_user), db: Session = Depends(ge
 def pulse(user: User = Depends(current_user), db: Session = Depends(get_db)):
     from app.services.pulse import build_pulse
     return build_pulse(db, user)
+
+
+@router.post("/research/{symbol}/ask")
+def research_ask(symbol: str, body: dict, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Question about one company, answered only from its transcripts, with verified citations."""
+    from app.services.qa import ask_company
+    company = get_company(symbol, db)
+    q = str(body.get("q", "")).strip()[:300]
+    if len(q) < 3:
+        raise HTTPException(422, "Ask a question")
+    return ask_company(db, company, q)

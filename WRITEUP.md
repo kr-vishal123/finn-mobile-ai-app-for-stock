@@ -14,6 +14,12 @@
 **Pull: any NSE ticker, from Ask or by tapping a company**
 - A snapshot, the latest quarter, a six-year trajectory (CAGRs and margin drift), the balance sheet and working-capital cycle, and cash conversion (CFO/EBITDA over 5 years).
 - **Promised vs delivered.** Explicit numeric guidance is pulled from the last four earnings-call transcripts, quoted verbatim with a page link, and checked in code against the reported quarters. ASTRAL guided a 16–18% EBITDA margin and is delivering 13.8% in H1 FY27, so it's behind. Its 20%+ growth guidance is on track at 21.4%. Segment-level targets are kept but deliberately *not* scored against company totals.
+- **Ask the company's own calls.** On any company page, or in the Ask tab ("What did ASTRAL say about PVC prices?"):
+  - Keyword relevance search (BM25) over that company's last four transcripts picks the most relevant pages.
+  - Gemini 3.5 Flash answers **only** from those pages, and must cite each claim with a verbatim quote and the call and page.
+  - **Code then checks every quote word-for-word against the cited page** and drops any it can't find. An answer with no verified quote is replaced by the raw passages.
+  - Ask it something the transcripts don't cover and it says so, rather than answering from memory.
+  - Without a key, it shows the best-matching passages verbatim.
 - **Bull and bear facts.** Each side is a short list of facts derived from the numbers above, not prose.
 - Sources are listed with links. Pull uses only primary documents: exchange-filed results (as standardised by screener.in), company transcripts and annual reports.
 - **It generalises.** An unseen ticker is resolved lazily: company metadata from Yahoo, financials and document links from screener, then the transcripts are read. It takes a few seconds the first time and is cached after that.
@@ -72,6 +78,8 @@
 
 **LLMs and agents**
 - Cheap tier (Gemini 3.5 Flash Lite, free): classification and one-liners for the filings rules can't place, batched 20 per call, with structured JSON output and retries.
+- Strong tier (Gemini 3.5 Flash, free): grounded company Q&A only. Each call is about 3k input tokens and runs only when the investor asks.
+- Validation before caching: a truncated or malformed model reply is never stored, and a corrupt cache entry heals itself. I learned this the hard way when a thinking model ran out of output tokens.
 - Strong tier: Pull interpretation only.
 - No autonomous agents: the "Ask" router is deterministic, so it's instant and free, and a model only parses intent when a key exists. I chose predictable tools over an agent loop because every answer here is a lookup plus arithmetic.
 
@@ -83,7 +91,7 @@
 - Real push notifications. Alerts are generated and deduplicated; delivery is the next step.
 - BSE as a source. BSE's API refuses automated clients, so I didn't work around it.
 - Voice input and a chat transcript UI. Answers are cards, not paragraphs, by design.
-- Model-written bull and bear prose. Fact lists come first; with a key, the strong model would write the 3–4 lines on top.
+- Model-written bull and bear prose. Facts come first; the strong model is reserved for questions the investor actually asks.
 
 ## Where I'd take it next
 1. Use the cheap model to refine guidance extraction and person extraction too. The rule pass already narrows each transcript to a few candidate sentences, so this costs a few hundred tokens per company.

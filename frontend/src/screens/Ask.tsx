@@ -3,6 +3,7 @@ import { api, net, type AskResult } from "../api";
 import { PersonRow, SyntheticNote } from "../components";
 import { go } from "../nav";
 import { KeepWarmList } from "./People";
+import { QAView } from "./CompanyQA";
 
 
 export default function Ask() {
@@ -74,7 +75,7 @@ const GROUPS: { title: string; hint: string; items: string[] }[] = [
   {
     title: "Research any NSE company",
     hint: "numbers, promises vs delivery, sources",
-    items: ["Research DIXON", "Adani Power", "Research HAL"],
+    items: ["Research DIXON", "Adani Power", "What did ASTRAL say about PVC prices?", "What is Dixon's display capex plan?"],
   },
   {
     title: "Who should I call?",
@@ -183,6 +184,14 @@ function Answer({ r, onExample }: { r: AskResult; onExample: (q: string) => void
             </button>
           )}
           <SyntheticNote />
+        </>
+      )}
+      {r.type === "company_qa" && (
+        <>
+          <QAView r={r.qa} />
+          <button onClick={() => go({ company: r.symbol })} className="mt-3 text-sm underline">
+            Open {r.symbol} research →
+          </button>
         </>
       )}
       {r.type === "keep_warm" && <KeepWarmList items={r.results} />}

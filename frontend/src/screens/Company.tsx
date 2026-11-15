@@ -3,6 +3,7 @@ import { net, type Promise_, type Research } from "../api";
 import { crore, Delta, PersonRow, Section, SyntheticNote } from "../components";
 import { go } from "../nav";
 import { ResultsTable } from "./ResultsTable";
+import { CompanyAsk } from "./CompanyQA";
 
 const METRIC: Record<string, string> = {
   revenue_growth: "Revenue growth",
@@ -71,6 +72,10 @@ function Body({ r }: { r: Research }) {
         <Stat label={r.is_lender ? "ROE" : "ROCE"} value={`${(r.is_lender ? r.ratios.roe : r.ratios.roce)?.toFixed(1) ?? "—"}%`} />
       </div>
       {r.description && <p className="mt-3 text-[13px] text-mute leading-relaxed line-clamp-4">{r.description}</p>}
+
+      <Section title={`Ask ${r.symbol}`} hint="answers from its earnings calls only">
+        <CompanyAsk symbol={r.symbol} />
+      </Section>
 
       {/* What the numbers say: the tightest bull/bear */}
       {(r.signals.bull.length > 0 || r.signals.bear.length > 0) && (

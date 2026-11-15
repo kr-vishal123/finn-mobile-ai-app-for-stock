@@ -222,7 +222,9 @@ def build_guidance(db: Session, company: Company, max_calls: int = 4) -> int:
         if not pages:
             d.status = "failed"
             continue
+        from app.services.qa import store_pages
         d.status, d.page_count = "parsed", len(pages)
+        store_pages(db, d, pages)  # transcript pages power "Ask about this company"
         call_fy = 2000 + _fy_of(d.doc_date) if d.doc_date else date.today().year
         for p in find_promises(pages, call_fy):
             if p["scope"] == "segment" and p["metric"] != "capex":

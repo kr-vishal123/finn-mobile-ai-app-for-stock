@@ -135,13 +135,24 @@ def complete(
     if get_settings().llm_cache_enabled:
         hit = db.scalar(select(LLMCall).where(LLMCall.cache_key == key))
         if hit is not None:
-            hit.hits += 1
-            db.flush()
-            return json.loads(hit.response) if schema is not None else hit.response
+            try:
+                value = json.loads(hit.response) if schema is not None else hit.response
+                hit.hits += 1
+                db.flush()
+                return value
+            except json.JSONDecodeError:  # self-heal: drop a corrupt cache entry and call again
+                db.delete(hit)
+                db.flush()
 
     call = _call_anthropic if provider == "anthropic" else _call_gemini
     t0 = time.perf_counter()
     text, tin, tout = call(model, system, prompt, schema, max_tokens, effort)
+    parsed = None
+    if schema is not None:
+        try:  # validate BEFORE caching: a truncated reply must never be replayed from cache
+            parsed = json.loads(text)
+        except json.JSONDecodeError as e:
+            raise LLMUnavailable(f"model returned incomplete JSON ({tout} output tokens)") from e
     price = PRICES.get(model)
     db.add(LLMCall(
         cache_key=key, task=task, provider=provider, model=model, response=text,
@@ -150,4 +161,4 @@ def complete(
         latency_ms=int((time.perf_counter() - t0) * 1000),
     ))
     db.flush()
-    return json.loads(text) if schema is not None else text
+    return parsed if schema is not None else text

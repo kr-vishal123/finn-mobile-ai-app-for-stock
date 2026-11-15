@@ -106,6 +106,23 @@ def _find_person(db: Session, user: User, text: str):
     return None
 
 
+def _is_question(low: str) -> bool:
+    """A question *about the business* (not 'who should I call'): goes to transcript Q&A."""
+    if re.search(r"\bwho\b|\bcall\b|introduc|reconnect", low):
+        return False
+    return bool(re.search(r"\b(what|why|how|did|does|is there|any)\b.*\b(say|said|says|outlook|plan|plans|guid\w*|"
+                          r"margin\w*|capex|demand|pricing|prices?|expect\w*|growth|debt|order\w*|"
+                          r"competition|risk\w*|strategy|target\w*)\b", low))
+
+
+def _company_qa(db: Session, company: Company, text: str) -> dict:
+    from app.services.qa import ask_company
+    r = ask_company(db, company, text)
+    if r["mode"] == "none":  # no transcripts yet: open the research view, which fetches them
+        return {"type": "company", "title": company.name, "symbol": company.nse_symbol}
+    return {"type": "company_qa", "title": company.name.split(" Ltd")[0], "symbol": company.nse_symbol, "qa": r}
+
+
 def answer(db: Session, user: User, q: str) -> dict:
     text = q.strip()
     low = text.lower()
@@ -127,6 +144,8 @@ def answer(db: Session, user: User, q: str) -> dict:
                     "person": network.person_card(db, user, hit[1].id)}
 
     company = _find_company(db, text)
+    if company and _is_question(low):
+        return _company_qa(db, company, text)
     if company and re.search(r"who|call|ask|talk|speak|expert|know", low):
         return {"type": "who_to_call", "title": f"Who to call about {company.name.split(' Ltd')[0]}",
                 "symbol": company.nse_symbol, "results": network.who_to_call(db, user, company, limit=5)}
@@ -149,6 +168,11 @@ def answer(db: Session, user: User, q: str) -> dict:
     found = _search_symbol(text)
     if found:
         symbol, name = found
+        if _is_question(low):
+            from app.services.companies import ensure_company
+            c = ensure_company(db, symbol)
+            if c is not None:
+                return _company_qa(db, c, text)
         if re.search(r"who|call|ask|talk|speak|expert|know", low):
             from app.services.companies import ensure_company
             c = ensure_company(db, symbol)

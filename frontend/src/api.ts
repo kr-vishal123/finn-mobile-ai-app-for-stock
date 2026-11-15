@@ -192,10 +192,13 @@ export type AskResult =
   | { type: "person_reach"; title: string; person: any; results: Suggestion[] }
   | { type: "person"; title: string; person: PersonCard }
   | { type: "company"; title: string; symbol: string }
+  | { type: "company_qa"; title: string; symbol: string; qa: QA }
   | { type: "help"; title: string; examples: string[] };
 
 export const net = {
   research: (s: string) => req<Research>(`/research/${encodeURIComponent(s)}`),
+  companyAsk: (s: string, q: string) =>
+    req<QA>(`/research/${encodeURIComponent(s)}/ask`, { method: "POST", body: JSON.stringify({ q }) }),
   ask: (q: string) => req<AskResult>("/ask", { method: "POST", body: JSON.stringify({ q }) }),
   keepWarm: () => req<KeepWarm[]>("/network/keep-warm"),
   themes: () => req<{ theme: string; people: number }[]>("/network/themes"),
@@ -208,4 +211,17 @@ export interface Pulse {
   movers: { symbol: string; close: number; day: number; week: number | null; date: string }[];
   behind: { symbol: string; count: number; line: string }[];
   reconnect: KeepWarm[];
+}
+
+export interface QA {
+  question: string;
+  symbol: string;
+  mode: "answer" | "passages" | "none";
+  answer: string | null;
+  not_found?: boolean;
+  citations: { ref: string; url: string; quote: string }[];
+  passages: { ref: string; url: string; snippet: string; page: number; call: string }[];
+  note?: string;
+  model?: string;
+  unverified_dropped?: number;
 }
